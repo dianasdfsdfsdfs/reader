@@ -1,0 +1,16 @@
+services:
+  reader-db:
+    image: postgres:16
+    container_name: reader-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: reader
+      POSTGRES_PASSWORD: reader_password
+      POSTGRES_DB: reader_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - reader_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  reader_postgres_data:

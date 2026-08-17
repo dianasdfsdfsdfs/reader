@@ -1,0 +1,85 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider      = "prisma-client"
+  output        = "../src/generated/prisma"
+  binaryTargets = ["native", "darwin-arm64"] // Tento riadok sme pridali
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id Int @id @default(autoincrement())
+  email String @unique
+  passwordHash String
+
+  books UsersBooks[]
+}
+
+
+model Book {
+  id Int @id @default(autoincrement())
+  title String
+  author String?
+  fileKey String
+  coverKey String?
+  language String?
+  isPublic Boolean @default(false)
+
+  users UsersBooks[]
+  genres GenresBooks[]
+}
+
+model UsersBooks {
+  @@id([userId, bookId])
+
+  userId Int
+  userRelation User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  bookId Int
+  bookRelation Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  visibility Visibility @default(PRIVATE)
+  progress Int @default(0)
+  currentLocation String?
+  favourite Boolean @default(false)
+  theme Themes @default(LIGHT)
+  fontSize Int @default(16)
+
+  customTitle String?
+  customCoverKey String?
+
+  addedAt DateTime @default(now())
+}
+
+model Genre {
+  id Int @id @default(autoincrement())
+  genre String @unique
+  books GenresBooks[]
+}
+
+model GenresBooks {
+  @@id([bookId, genreId])
+
+  bookId Int
+  bookRelation Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  genreId Int
+  genreRelation Genre @relation(fields: [genreId], references: [id], onDelete: Cascade)
+}
+
+enum Visibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum Themes {
+  DARK
+  LIGHT
+  SEPIA
+}
