@@ -6,6 +6,18 @@ import { badRequest, conflict, forbidden, notFound } from "@/shared/errors";
 
 const READING_URL_TTL = 60 * 60;
 
+/** Приводим `genres` из multipart к массиву: одно поле приходит строкой. */
+const normalizeGenres = (genres?: string[] | string) => {
+    if (!genres) {
+        return undefined;
+    }
+
+    return (Array.isArray(genres) ? genres : [genres])
+        .map((genre) => genre.trim())
+        .filter((genre) => genre.length > 0)
+        .slice(0, 10);
+};
+
 const EXTENSIONS: Record<string, string> = {
     "application/epub+zip": "epub",
     "image/jpeg": "jpg",
@@ -21,7 +33,7 @@ class BookService {
         cover?: File | null;
         author?: string | null;
         language?: string | null;
-        genres?: string[];
+        genres?: string[] | string;
         visibility?: Visibility;
     }) {
         const uploadedKeys: string[] = [];
@@ -42,9 +54,7 @@ class BookService {
                 title: data.title.trim(),
                 author: data.author?.trim() || null,
                 language: data.language?.trim().toLowerCase() || null,
-                genres: data.genres
-                    ?.map((genre) => genre.trim())
-                    .filter((genre) => genre.length > 0),
+                genres: normalizeGenres(data.genres),
                 visibility: data.visibility,
                 fileKey,
                 coverKey

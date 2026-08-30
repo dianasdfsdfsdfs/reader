@@ -4,11 +4,20 @@ import { Themes, Visibility } from "@/generated/prisma/enums";
 export const BOOK_MIME_TYPES = ["application/epub+zip"];
 export const COVER_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
+/**
+ * В multipart-форме одно поле `genres` приходит строкой, а не массивом из одного
+ * элемента, — поэтому принимаем оба варианта, а сервис приводит их к массиву.
+ */
+export const genresField = t.Union([
+    t.Array(t.String({ maxLength: 50 }), { maxItems: 10 }),
+    t.String({ maxLength: 50 })
+]);
+
 export const uploadBookBody = t.Object({
     title: t.String({ minLength: 1, maxLength: 255 }),
     author: t.Optional(t.String({ maxLength: 255 })),
     language: t.Optional(t.String({ maxLength: 35 })),
-    genres: t.Optional(t.Array(t.String({ maxLength: 50 }), { maxItems: 10 })),
+    genres: t.Optional(genresField),
     visibility: t.Optional(t.Enum(Visibility)),
 
     cover: t.Optional(
