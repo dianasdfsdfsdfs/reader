@@ -113,7 +113,9 @@ function CatalogBook({
     onAdd: (book: Book) => void;
 }) {
     return (
-        <article className="group">
+        // Карточка тянется на всю высоту ряда, а кнопка прижата к низу: иначе у книг
+        // с названием в две строки «Добавить» съезжает ниже соседних.
+        <article className="group flex h-full flex-col">
             <Link to={`/book/${book.id}`}>
                 <Cover
                     title={book.title}
@@ -123,7 +125,7 @@ function CatalogBook({
                 />
             </Link>
 
-            <div className="mt-2.5 space-y-2">
+            <div className="mt-2.5 flex flex-1 flex-col gap-2">
                 <Link to={`/book/${book.id}`} className="block">
                     <h3 className="line-clamp-2 text-sm leading-snug font-semibold text-ink">
                         {book.title}
@@ -141,6 +143,7 @@ function CatalogBook({
                 )}
 
                 <Button
+                    className="mt-auto"
                     size="sm"
                     fullWidth
                     variant={added ? "secondary" : "primary"}

@@ -17,7 +17,9 @@ export function BookCard({ book, onMenu, onFavourite, footer }: Props) {
     const owned = isUserBook(book);
 
     return (
-        <article className="group relative">
+        // Высота на весь ряд плюс mt-auto ниже: у книг с длинным названием
+        // прогресс и бейдж иначе съезжают относительно соседних карточек.
+        <article className="group relative flex h-full flex-col">
             <Link to={`/book/${book.id}`} className="block">
                 <Cover
                     title={book.title}
@@ -55,7 +57,7 @@ export function BookCard({ book, onMenu, onFavourite, footer }: Props) {
                 </div>
             )}
 
-            <div className="mt-2.5 space-y-1.5">
+            <div className="mt-2.5 flex flex-1 flex-col gap-1.5">
                 <Link to={`/book/${book.id}`} className="block">
                     <h3 className="line-clamp-2 text-sm leading-snug font-semibold text-ink">
                         {book.title}
@@ -66,7 +68,7 @@ export function BookCard({ book, onMenu, onFavourite, footer }: Props) {
                 </Link>
 
                 {owned ? (
-                    <>
+                    <div className="mt-auto space-y-1.5">
                         <Progress value={book.progress} />
                         <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-ink-faint">
                             {book.isPublic ? (
@@ -79,9 +81,9 @@ export function BookCard({ book, onMenu, onFavourite, footer }: Props) {
                                 </>
                             )}
                         </span>
-                    </>
+                    </div>
                 ) : (
-                    footer
+                    <div className="mt-auto">{footer}</div>
                 )}
             </div>
         </article>
