@@ -68,8 +68,13 @@ export function ReaderPage() {
         }
 
         let cancelled = false;
+        let book: Book | null = null;
+        let rendition: Rendition | null = null;
 
-        (async () => {
+        // Держим промис инициализации: если уйти со страницы пока книга грузится,
+        // ранний book.destroy() оставляет очередь epub.js с уже обнулённой книгой
+        // и она падает необработанным исключением. Поэтому чистим только после него.
+        const setup = (async () => {
             try {
                 const session = await booksApi.readingSession(bookId);
 
@@ -87,22 +92,24 @@ export function ReaderPage() {
                     return;
                 }
 
-                const book = ePub(buffer);
+                // Локальные const-копии: `book`/`rendition` выше объявлены изменяемыми
+                // ради очистки, и внутри колбэков TypeScript считал бы их nullable.
+                const openedBook = (book = ePub(buffer));
 
-                bookRef.current = book;
+                bookRef.current = openedBook;
 
-                const rendition = book.renderTo(viewer.current, {
+                const activeRendition = (rendition = openedBook.renderTo(viewer.current, {
                     width: "100%",
                     height: "100%",
                     flow: "paginated",
                     spread: "auto",
                     allowScriptedContent: false
-                });
+                }));
 
-                renditionRef.current = rendition;
+                renditionRef.current = activeRendition;
 
                 for (const [key, value] of Object.entries(THEMES)) {
-                    rendition.themes.register(key, {
+                    activeRendition.themes.register(key, {
                         body: {
                             background: value.background,
                             color: value.color,
@@ -115,12 +122,12 @@ export function ReaderPage() {
 
                 setTheme(session.theme);
                 setFontSize(session.fontSize);
-                rendition.themes.select(session.theme);
-                rendition.themes.fontSize(`${session.fontSize}px`);
+                activeRendition.themes.select(session.theme);
+                activeRendition.themes.fontSize(`${session.fontSize}px`);
 
-                await rendition.display(session.currentLocation ?? undefined);
+                await activeRendition.display(session.currentLocation ?? undefined);
 
-                const metadata = await book.loaded.metadata;
+                const metadata = await openedBook.loaded.metadata;
 
                 if (cancelled) {
                     return;
@@ -129,7 +136,7 @@ export function ReaderPage() {
                 setTitle(metadata.title ?? "");
                 setProgress(session.progress);
 
-                const navigation = await book.loaded.navigation;
+                const navigation = await openedBook.loaded.navigation;
 
                 setToc(
                     (navigation.toc ?? []).map((item) => ({
@@ -142,13 +149,13 @@ export function ReaderPage() {
 
                 // Карта позиций нужна для процента прочитанного; на больших книгах
                 // считается заметное время, поэтому не блокируем ей первый экран.
-                await book.locations.generate(1600);
+                await openedBook.locations.generate(1600);
 
                 if (cancelled) {
                     return;
                 }
 
-                rendition.on("relocated", (location: any) => {
+                activeRendition.on("relocated", (location: any) => {
                     const cfi = location?.start?.cfi;
 
                     if (!cfi) {
@@ -156,7 +163,7 @@ export function ReaderPage() {
                     }
 
                     const percentage = Math.round(
-                        (book.locations.percentageFromCfi(cfi) ?? 0) * 100
+                        (openedBook.locations.percentageFromCfi(cfi) ?? 0) * 100
                     );
 
                     setProgress(percentage);
@@ -188,10 +195,13 @@ export function ReaderPage() {
             }
 
             flush();
-            renditionRef.current?.destroy();
-            bookRef.current?.destroy();
             renditionRef.current = null;
             bookRef.current = null;
+
+            void setup.finally(() => {
+                rendition?.destroy();
+                book?.destroy();
+            });
         };
     }, [bookId, flush]);
 
