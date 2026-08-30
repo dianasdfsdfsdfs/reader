@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import env from "@/config/env";
+import { unauthorized } from "@/shared/errors";
 
 type TokenPayload = {
     id: number;
@@ -19,22 +20,26 @@ class TokenService {
     }
 
     verify(token: string) {
-        return jwt.verify(token, env.JWT_SECRET) as TokenPayload;
+        try {
+            return jwt.verify(token, env.JWT_SECRET) as TokenPayload;
+        } catch {
+            throw unauthorized("Invalid or expired token");
+        }
     }
 
     parseBearerHeader(authorization?: string) {
         if (!authorization) {
-            throw new Error("Authorization header missing");
+            throw unauthorized("Authorization header missing");
         }
 
         if (!authorization.startsWith("Bearer ")) {
-            throw new Error("Expected Bearer token");
+            throw unauthorized("Expected Bearer token");
         }
 
         const token = authorization.slice(7).trim();
 
         if (!token) {
-            throw new Error("Bearer token is empty");
+            throw unauthorized("Bearer token is empty");
         }
 
         return token;

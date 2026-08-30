@@ -19,6 +19,7 @@ model User {
   passwordHash String
 
   books UsersBooks[]
+  collections Collection[]
 }
 
 
@@ -53,6 +54,38 @@ model UsersBooks {
 
   customTitle String?
   customCoverKey String?
+
+  addedAt DateTime @default(now())
+
+  collections CollectionsBooks[]
+}
+
+model Collection {
+  id Int @id @default(autoincrement())
+  name String
+  description String?
+
+  userId Int
+  userRelation User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  books CollectionsBooks[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, name])
+}
+
+// Коллекция ссылается на UsersBooks, а не на Book напрямую: так в неё физически
+// нельзя положить чужую книгу, а удаление книги из библиотеки убирает её из коллекций.
+model CollectionsBooks {
+  @@id([collectionId, userId, bookId])
+
+  collectionId Int
+  collectionRelation Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  userId Int
+  bookId Int
+  userBookRelation UsersBooks @relation(fields: [userId, bookId], references: [userId, bookId], onDelete: Cascade)
 
   addedAt DateTime @default(now())
 }

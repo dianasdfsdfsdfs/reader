@@ -1,7 +1,8 @@
 import { bookRepository } from "../repositories/book";
-import { storage } from "@/config/supabase";
+import { storage } from "@/config/storage";
 import { Visibility } from "@/generated/prisma/enums";
 import { Themes } from "@/generated/prisma/enums";
+import { badRequest, conflict, forbidden, notFound } from "@/shared/errors";
 
 const READING_URL_TTL = 60 * 60;
 
@@ -26,13 +27,13 @@ class BookService {
         const uploadedKeys: string[] = [];
 
         try {
-            const fileKey = await this.uploadToStorage(data.userId, data.file);
+            const fileKey = await this.uploadToStorage("books", data.userId, data.file);
             uploadedKeys.push(fileKey);
 
             let coverKey: string | null = null;
 
             if (data.cover) {
-                coverKey = await this.uploadToStorage(data.userId, data.cover);
+                coverKey = await this.uploadToStorage("covers", data.userId, data.cover);
                 uploadedKeys.push(coverKey);
             }
 
@@ -54,17 +55,18 @@ class BookService {
         }
     }
 
-    private async uploadToStorage(userId: number, file: File) {
+    /**
+     * Обложки лежат под `covers/` и отдаются постоянной ссылкой, сами книги —
+     * под `books/` и только по временной подписанной ссылке.
+     */
+    private async uploadToStorage(kind: "books" | "covers", userId: number, file: File) {
         const extension = EXTENSIONS[file.type] ?? "bin";
-        const key = `books/${userId}/${crypto.randomUUID()}.${extension}`;
+        const key = `${kind}/${userId}/${crypto.randomUUID()}.${extension}`;
 
-        const { error } = await storage.upload(key, file, {
-            contentType: file.type,
-            upsert: false
-        });
-
-        if (error) {
-            throw new Error(`Failed to upload file: ${error.message}`);
+        try {
+            await storage.upload(key, file);
+        } catch (error: any) {
+            throw badRequest(`Failed to upload file: ${error.message}`);
         }
 
         return key;
@@ -83,13 +85,13 @@ class BookService {
         const book = await bookRepository.findPublicBookById(bookId);
 
         if (!book) {
-            throw new Error("This book does not exist or is not public.");
+            throw notFound("This book does not exist or is not public.");
         }
 
         const alreadyInLibrary = await bookRepository.findUserBookById(userId, bookId);
 
         if (alreadyInLibrary) {
-            throw new Error("This book is already in your library.");
+            throw conflict("This book is already in your library.");
         }
 
         return await bookRepository.addBookToLibrary(userId, bookId);
@@ -129,6 +131,7 @@ class BookService {
     async getCatalogBooks(
         userId: number,
         filter: {
+            title?: string;
             genre?: string;
         } = {},
         options: {
@@ -142,17 +145,78 @@ class BookService {
         return await bookRepository.findCatalogBooks(
             userId,
             {
+                title: filter.title?.trim() || undefined,
                 genre: filter.genre?.trim() || undefined
             },
             { take, skip }
         );
     }
 
+    /**
+     * Экран Library: «Most popular» плюс строка на каждый жанр.
+     * Собрано одним методом, чтобы фронт не дёргал /catalog по разу на жанр.
+     */
+    async getCatalogSections(
+        userId: number,
+        options: { sections?: number; perSection?: number } = {}
+    ) {
+        const sections = Math.min(Math.max(options.sections ?? 6, 1), 12);
+        const perSection = Math.min(Math.max(options.perSection ?? 10, 1), 20);
+
+        const genres = await bookRepository.findGenresWithPublicBooks(sections);
+
+        const [popular, ...byGenre] = await Promise.all([
+            bookRepository.findMostPopularBooks(userId, perSection),
+            ...genres.map((genre) =>
+                bookRepository.findCatalogBooks(
+                    userId,
+                    { genre: genre.genre },
+                    { take: perSection, skip: 0 }
+                )
+            )
+        ]);
+
+        return [
+            { key: "popular", title: "Most popular", books: popular! },
+            ...genres.map((genre, index) => ({
+                key: `genre:${genre.genre}`,
+                title: genre.genre,
+                books: byGenre[index] ?? []
+            }))
+        ].filter((section) => section.books.length > 0);
+    }
+
+    async getGenres(userId: number, scope: "library" | "catalog") {
+        const genres =
+            scope === "library"
+                ? await bookRepository.findGenresInUserLibrary(userId)
+                : await bookRepository.findGenresWithPublicBooks();
+
+        return genres.map((genre) => genre.genre);
+    }
+
+    /** Карточка одной книги: сначала ищем в библиотеке пользователя, потом в публичном каталоге. */
+    async getBook(userId: number, bookId: number) {
+        const userBook = await bookRepository.findUserBookById(userId, bookId);
+
+        if (userBook) {
+            return { inLibrary: true as const, userBook };
+        }
+
+        const publicBook = await bookRepository.findPublicBookByIdRaw(bookId);
+
+        if (!publicBook) {
+            throw notFound("This book does not exist or is not public.");
+        }
+
+        return { inLibrary: false as const, book: publicBook };
+    }
+
     async deleteBook(userId: number, bookId: number) {
         const userBook = await bookRepository.findUserBookById(userId, bookId);
 
         if (!userBook) {
-            throw new Error("You don't have this book");
+            throw notFound("You don't have this book.");
         }
 
         await bookRepository.deletePrivateBook(userId, bookId);
@@ -182,18 +246,18 @@ class BookService {
         const userBook = await bookRepository.findUserBookById(userId, bookId);
 
         if (!userBook) {
-            throw new Error("You don't have this book.");
+            throw notFound("You don't have this book.");
         }
 
         if (data.visibility === Visibility.PRIVATE && userBook.bookRelation.isPublic) {
-            throw new Error("This book is published and cannot be made private.");
+            throw forbidden("This book is published and cannot be made private.");
         }
 
         const oldCoverKey = userBook.customCoverKey;
         let customCoverKey: string | undefined;
 
         if (data.cover) {
-            customCoverKey = await this.uploadToStorage(userId, data.cover);
+            customCoverKey = await this.uploadToStorage("covers", userId, data.cover);
         }
 
         try {
@@ -222,7 +286,7 @@ class BookService {
         const book = await bookRepository.findUserBookById(userId, bookId);
 
         if (!book) {
-            throw new Error("You don't have this book.");
+            throw notFound("You don't have this book.");
         }
 
         return await bookRepository.addToFavourite(userId, bookId, favourite);
@@ -237,7 +301,7 @@ class BookService {
         const book = await bookRepository.findUserBookById(userId, bookId);
 
         if (!book) {
-            throw new Error("You don't have this book.");
+            throw notFound("You don't have this book.");
         }
 
         return await bookRepository.updateBookSettings(userId, bookId, settings);
@@ -247,20 +311,19 @@ class BookService {
         const userBook = await bookRepository.findUserBookById(userId, bookId);
 
         if (!userBook) {
-            throw new Error("You don't have this book.");
+            throw notFound("You don't have this book.");
         }
 
-        const { data, error } = await storage.createSignedUrl(
-            userBook.bookRelation.fileKey,
-            READING_URL_TTL
-        );
+        let url: string;
 
-        if (error || !data) {
-            throw new Error("Failed to create a reading link.");
+        try {
+            url = await storage.signedUrl(userBook.bookRelation.fileKey, READING_URL_TTL);
+        } catch {
+            throw badRequest("Failed to create a reading link.");
         }
 
         return {
-            url: data.signedUrl,
+            url,
             expiresIn: READING_URL_TTL,
             currentLocation: userBook.currentLocation,
             progress: userBook.progress,

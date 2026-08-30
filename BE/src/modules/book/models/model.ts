@@ -69,8 +69,15 @@ export const userBooksQuery = t.Object({
 });
 
 export const catalogBooksQuery = t.Object({
+    title: t.Optional(t.String({ maxLength: 255 })),
     genre: t.Optional(t.String({ maxLength: 50 })),
 
     take: t.Optional(t.Numeric({ minimum: 1, maximum: 50 })),
     skip: t.Optional(t.Numeric({ minimum: 0 }))
+});
+
+/** Сколько жанровых секций и книг в каждой отдаём на экран Library. */
+export const catalogSectionsQuery = t.Object({
+    sections: t.Optional(t.Numeric({ minimum: 1, maximum: 12 })),
+    perSection: t.Optional(t.Numeric({ minimum: 1, maximum: 20 }))
 });

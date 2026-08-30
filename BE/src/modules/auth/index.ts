@@ -1,4 +1,3 @@
-
 import { Elysia } from "elysia";
 import { registerBody, loginBody } from "./models/model";
 import { authService } from "./services/auth";
@@ -6,59 +5,47 @@ import { authentificateMiddleware } from "./middlewares/authentificate";
 import { UserDTO } from "./dto/user";
 
 export const auth = new Elysia({ prefix: "/auth" })
-.post(
-    "/register",
-    async ({ body }) => {
-        try {
-            const response = await authService.register(
-                body.email,
-                body.password,
-            );
-            
-            const dtoResponse = await UserDTO.makeToResponse(
-                response.user,
-                "Login successful"
-            );
-            
-            return {
-                ...dtoResponse,
-                    token: response.token
-                };
-            } catch (e: any) {
-                return {
-                    status: "error",
-                    message: e.message
-                };
-            }
+    .post(
+        "/register",
+        async ({ body, status }) => {
+            const { user, token } = await authService.register(body.email, body.password);
+
+            return status(201, {
+                ...UserDTO.makeToResponse(user, "Registration successful"),
+                token
+            });
         },
         {
             body: registerBody,
-            // response: UserDTO.type()
+            detail: { summary: "Создать аккаунт", tags: ["auth"] }
         }
     )
     .post(
         "/login",
         async ({ body }) => {
-            try {
-                const response = await authService.login(body.email, body.password);
+            const { user, token } = await authService.login(body.email, body.password);
 
-                const dtoResponse = await UserDTO.makeToResponse(
-                    response.user,
-                    "Login successful"
-                );
-                
-                return {
-                    ...dtoResponse,
-                    token: response.token
-                };
-            } catch (e: any) {
-                return {
-                    status: "error",
-                    message: e.message
-                };
-            }
+            return {
+                ...UserDTO.makeToResponse(user, "Login successful"),
+                token
+            };
         },
         {
-            body: loginBody
+            body: loginBody,
+            detail: { summary: "Войти", tags: ["auth"] }
         }
     )
+    .use(authentificateMiddleware)
+    .get(
+        "/me",
+        ({ user }) => UserDTO.makeToResponse(user, "Current user"),
+        { detail: { summary: "Текущий пользователь", tags: ["auth"] } }
+    )
+    .post(
+        "/logout",
+        () => ({
+            status: "success",
+            message: "Logout successful"
+        }),
+        { detail: { summary: "Выйти", tags: ["auth"] } }
+    );

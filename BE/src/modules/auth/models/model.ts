@@ -1,11 +1,7 @@
 import { t } from "elysia";
 
-export const registerBody = t.Object({
-    email: t.String({ format: "email" }),
-    password: t.String({ minLength: 3, maxLength: 10 })
-});
+const email = t.String({ format: "email", maxLength: 255 });
+const password = t.String({ minLength: 8, maxLength: 128 });
 
-export const loginBody = t.Object({
-    email: t.String({ format: "email" }),
-    password: t.String({ minLength: 3, maxLength: 8})
-});
+export const registerBody = t.Object({ email, password });
+export const loginBody = t.Object({ email, password });

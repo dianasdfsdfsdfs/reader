@@ -1,6 +1,6 @@
 import { t, type Static } from "elysia";
 import { Themes, Visibility } from "@/generated/prisma/enums";
-import { storage } from "@/config/supabase";
+import { storage } from "@/config/storage";
 
 /* ---------- схемы ответа ---------- */
 
@@ -68,7 +68,7 @@ type UserBookRow = {
 /* ---------- мапперы ---------- */
 
 const toCoverUrl = (coverKey: string | null) =>
-    coverKey ? storage.getPublicUrl(coverKey).data.publicUrl : null;
+    coverKey ? storage.publicUrl(coverKey) : null;
 
 const toGenres = (genres: BookRow["genres"]) =>
     genres.map((genre) => genre.genreRelation.genre);

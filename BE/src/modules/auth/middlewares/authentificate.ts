@@ -1,8 +1,9 @@
 import { Elysia } from "elysia";
 import db from "@/db";
 import { tokenService } from "../services/token";
+import { unauthorized } from "@/shared/errors";
 
-export const authentificateMiddleware = new Elysia()
+export const authentificateMiddleware = new Elysia({ name: "authentificate" })
     .derive({ as: "scoped" }, async ({ headers }) => {
         const token = tokenService.parseBearerHeader(headers.authorization);
 
@@ -15,7 +16,7 @@ export const authentificateMiddleware = new Elysia()
         });
 
         if (!user) {
-            throw new Error("Unauthorized");
+            throw unauthorized();
         }
 
         return {

@@ -6,7 +6,10 @@ class AuthRepository {
     async findByEmail(email: string) {
         return await database.user.findFirst({
             where: {
-                email
+                email: {
+                    equals: email,
+                    mode: "insensitive"
+                }
             }
         });
     }

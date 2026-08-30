@@ -80,6 +80,7 @@ class BookRepository {
                     fileKey: data.fileKey,
                     coverKey: data.coverKey ?? null,
                     language: data.language ?? null,
+                    isPublic: data.visibility === Visibility.PUBLIC,
                     genres: {
                         create: genreIds.map((genreId) => ({ genreId }))
                     },
@@ -238,7 +239,12 @@ class BookRepository {
             where: {
                 userId_bookId: {userId, bookId}
             },
-            data: settings
+            data: settings,
+            include: {
+                bookRelation: {
+                    include: bookWithGenres
+                }
+            }
         })
     }
 
@@ -249,6 +255,11 @@ class BookRepository {
             }, 
             data: {
                 favourite: favourite
+            },
+            include: {
+                bookRelation: {
+                    include: bookWithGenres
+                }
             }
         })
     }
@@ -284,14 +295,28 @@ class BookRepository {
     ) {
         const { take = 20, skip = 0, sort = "added" } = options;
 
+        // Пользователь видит customTitle, если он задан, поэтому и искать надо по нему:
+        // иначе переименованная книга не находится по своему же новому названию.
+        const titleFilter = filter.title
+            ? {
+                  OR: [
+                      { customTitle: { contains: filter.title, mode: "insensitive" as const } },
+                      {
+                          customTitle: null,
+                          bookRelation: {
+                              title: { contains: filter.title, mode: "insensitive" as const }
+                          }
+                      }
+                  ]
+              }
+            : {};
+
         return await database.usersBooks.findMany({
             where: {
                 userId,
                 favourite: filter.favourite,
+                ...titleFilter,
                 bookRelation: {
-                    title: filter.title
-                        ? { contains: filter.title, mode: "insensitive" }
-                        : undefined,
                     author: filter.author
                         ? { contains: filter.author, mode: "insensitive" }
                         : undefined,
@@ -317,6 +342,7 @@ class BookRepository {
     async findCatalogBooks(
         userId: number,
         filter: {
+            title?: string;
             genre?: string;
         } = {},
         options: {
@@ -332,6 +358,9 @@ class BookRepository {
                 users: {
                     none: { userId }
                 },
+                title: filter.title
+                    ? { contains: filter.title, mode: "insensitive" }
+                    : undefined,
                 genres: filter.genre
                     ? { some: { genreRelation: { genre: filter.genre } } }
                     : undefined
@@ -357,6 +386,83 @@ class BookRepository {
 
     async deletePublicBookById(bookId: number) {
         return await database.book.delete({ where: { id: bookId } });
+    }
+
+    /** Жанры, у которых есть хотя бы одна публичная книга — для фильтров и секций Library. */
+    async findGenresWithPublicBooks(limit?: number) {
+        return await database.genre.findMany({
+            where: {
+                books: {
+                    some: {
+                        bookRelation: { isPublic: true }
+                    }
+                }
+            },
+            select: {
+                id: true,
+                genre: true,
+                _count: {
+                    select: {
+                        books: {
+                            where: {
+                                bookRelation: { isPublic: true }
+                            }
+                        }
+                    }
+                }
+            },
+            orderBy: [
+                { books: { _count: "desc" } },
+                { genre: "asc" }
+            ],
+            take: limit
+        });
+    }
+
+    /** Жанры книг, которые уже лежат в библиотеке пользователя. */
+    async findGenresInUserLibrary(userId: number) {
+        return await database.genre.findMany({
+            where: {
+                books: {
+                    some: {
+                        bookRelation: {
+                            users: { some: { userId } }
+                        }
+                    }
+                }
+            },
+            select: { id: true, genre: true },
+            orderBy: { genre: "asc" }
+        });
+    }
+
+    /** Самые популярные публичные книги — первая секция на экране Library. */
+    async findMostPopularBooks(userId: number, take: number) {
+        return await database.book.findMany({
+            where: {
+                isPublic: true,
+                users: { none: { userId } }
+            },
+            include: {
+                ...bookWithGenres,
+                _count: { select: { users: true } }
+            },
+            orderBy: [
+                { users: { _count: "desc" } },
+                { id: "asc" }
+            ],
+            take
+        });
+    }
+
+    async findPublicBookByIdRaw(bookId: number) {
+        return await database.book.findFirst({
+            where: { id: bookId, isPublic: true },
+            include: {
+                ...bookWithGenres,
+                _count: { select: { users: true } }
+            }
+        });
     }
 
 }
