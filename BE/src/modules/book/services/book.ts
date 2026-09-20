@@ -174,24 +174,51 @@ class BookService {
         const perSection = Math.min(Math.max(options.perSection ?? 10, 1), 20);
 
         const genres = await bookRepository.findGenresWithPublicBooks(sections);
+        const genreIds = genres.map((genre) => genre.id);
 
-        const [popular, ...byGenre] = await Promise.all([
+        // Вместо запроса на каждый жанр: один запрос выбирает топ книг сразу во
+        // всех жанрах, второй достаёт сами книги. Число запросов не зависит от
+        // числа секций.
+        const [popular, ranked] = await Promise.all([
             bookRepository.findMostPopularBooks(userId, perSection),
-            ...genres.map((genre) =>
-                bookRepository.findCatalogBooks(
-                    userId,
-                    { genre: genre.genre },
-                    { take: perSection, skip: 0 }
-                )
-            )
+            genreIds.length > 0
+                ? bookRepository.findTopBookIdsPerGenre(userId, genreIds, perSection)
+                : []
         ]);
 
+        const books =
+            ranked.length > 0
+                ? await bookRepository.findCatalogBooksByIds([
+                      ...new Set(ranked.map((row) => row.bookId))
+                  ])
+                : [];
+        const bookById = new Map(books.map((book) => [book.id, book]));
+
+        // Порядок внутри жанра задан запросом, поэтому просто раскладываем.
+        const booksByGenreId = new Map<number, typeof books>();
+
+        for (const row of ranked) {
+            const book = bookById.get(row.bookId);
+
+            if (!book) {
+                continue;
+            }
+
+            const section = booksByGenreId.get(row.genreId);
+
+            if (section) {
+                section.push(book);
+            } else {
+                booksByGenreId.set(row.genreId, [book]);
+            }
+        }
+
         return [
-            { key: "popular", title: "Most popular", books: popular! },
-            ...genres.map((genre, index) => ({
+            { key: "popular", title: "Most popular", books: popular },
+            ...genres.map((genre) => ({
                 key: `genre:${genre.genre}`,
                 title: genre.genre,
-                books: byGenre[index] ?? []
+                books: booksByGenreId.get(genre.id) ?? []
             }))
         ].filter((section) => section.books.length > 0);
     }

@@ -1,4 +1,5 @@
 import database from "@/db";
+import { Prisma } from "@/generated/prisma/client";
 import { Themes, Visibility } from "@/generated/prisma/enums";
 
 const bookWithGenres = {
@@ -452,6 +453,51 @@ class BookRepository {
                 { id: "asc" }
             ],
             take
+        });
+    }
+
+    /**
+     * Топ-N книг внутри каждого жанра — одним запросом вместо запроса на жанр.
+     * Оконная функция нумерует книги по популярности в пределах своего жанра,
+     * снаружи остаются только первые `perSection`. Порядок совпадает с
+     * `findCatalogBooks`: сначала по числу читателей, при равенстве — по id.
+     */
+    async findTopBookIdsPerGenre(userId: number, genreIds: number[], perSection: number) {
+        return await database.$queryRaw<{ genreId: number; bookId: number }[]>`
+            SELECT "genreId", "bookId"
+            FROM (
+                SELECT
+                    gb."genreId" AS "genreId",
+                    b."id" AS "bookId",
+                    ROW_NUMBER() OVER (
+                        PARTITION BY gb."genreId"
+                        ORDER BY COUNT(ub."userId") DESC, b."id" ASC
+                    ) AS "position"
+                FROM "Book" b
+                JOIN "GenresBooks" gb ON gb."bookId" = b."id"
+                LEFT JOIN "UsersBooks" ub ON ub."bookId" = b."id"
+                WHERE b."isPublic" = TRUE
+                  AND gb."genreId" IN (${Prisma.join(genreIds)})
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM "UsersBooks" owned
+                      WHERE owned."bookId" = b."id" AND owned."userId" = ${userId}
+                  )
+                GROUP BY gb."genreId", b."id"
+            ) ranked
+            WHERE "position" <= ${perSection}
+            ORDER BY "genreId", "position"
+        `;
+    }
+
+    /** Книги по списку id — той же формы, что и остальной каталог. */
+    async findCatalogBooksByIds(bookIds: number[]) {
+        return await database.book.findMany({
+            where: { id: { in: bookIds } },
+            include: {
+                ...bookWithGenres,
+                _count: { select: { users: true } }
+            }
         });
     }
 
